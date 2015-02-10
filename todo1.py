@@ -1,9 +1,11 @@
 import sqlite3
-from flask import Flask, render_template, g
+from flask import Flask, render_template, g, request, url_for, session, flash, redirect, abort
 
 DATABASE = 'test.db'
+SECRET_KEY = 'This is secret'
 
 app = Flask(__name__)
+app.config.from_object(__name__)
 
 @app.route('/')
 def welcome():
@@ -11,13 +13,64 @@ def welcome():
 
 @app.route('/task', methods=['GET', 'POST'])
 def task():
-    #if request.method == 'POST'
-    #...
+    if request.method == 'POST':
+        if not session.get('logged_in'):
+            abort(401)
+        category = request.form['category']
+        priority = request.form['priority']
+        description = request.form['description']
+        addtask(category, priority, description)
+        flash('New task was successfully added.')
+        return redirect(url_for('task'))
     return render_template('show_entries.html', tasks=query_db('select * from tasks'))
 
 @app.route('/login', methods=['POST', 'GET'])
 def login():
-    return render_template('login.html', error=None)
+    error = None
+    if request.method == 'POST':
+        usern = request.form['username']
+        passw = request.form['password']
+        is_okay = isuser(usern,passw)
+        if is_okay == None:
+            #print "user is", is_okay
+            error = 'Invalid username or password.'
+        #if request.form['username'] != app.config['USERNAME']:
+        #    error = 'Invalid username.'
+        #elif request.form['password'] != app.config['PASSWORD']:
+        #    error = 'Invalid password.'
+        else:
+            session['logged_in'] = True
+            flash('You are logged in ...')
+            return redirect(url_for('task'))
+
+    return render_template('login.html', error=error)
+
+@app.route('/logout', methods=['GET'])
+def logout():
+    session.pop('logged_in', None)
+    flash('You are logged out.')
+    return redirect(url_for('task'))
+
+@app.route('/delete', methods=['POST'])
+def delete():
+    if not session.get('logged_in'):
+        abort(401)
+    removetask(request.form['category'], request.form['priority'], request.form['description'])
+    flash('Task delete successfully.')
+    return redirect(url_for('task'))
+
+def removetask(category, priority, description):
+    query_db('delete from tasks where category = ? and priority = ? and description = ?', [category, int(priority), description], one=True)
+    get_db().commit()
+
+def addtask(category, priority, description):
+    query_db('insert into tasks(category, priority, description) values (?,?,?)', [category, int(priority), description], one=True)
+    get_db().commit()
+
+def isuser(username, password):
+    users = query_db('select * from users where username = ? and password = ?', [username, password], one=True)
+    #print "=====users=====", users
+    return users
 
 def get_db():
     db = getattr(g, '_database', None)
